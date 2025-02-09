@@ -15,3 +15,5 @@ I am deeply excited about the vast possibilities that lie ahead. With these tool
 3. Adjust the **Brightness** slider to filter which pixels contribute to the fractal.
 4. Modify the Curve **Complexity** slider to explore different recursion depths of the Hilbert curve.
 5. Click the fractal area to save a high-resolution snapshot.
+
+![](SS.png)
