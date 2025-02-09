@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Hilbert's Webcam</title>
-  <!-- Helps iOS (iPhone/iPad) display the page properly in full screen -->
+  <!-- Helps iOS (iPhone/iPad) display properly in full screen -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
     /* Global reset and basic styles */
@@ -50,17 +50,19 @@
     }
 
     /* 
-      Canvas and video styles.
-      We mirror the video so it appears like a reflection.
+      Remove the forced aspect-ratio so that the video
+      can keep its natural camera ratio (e.g., iPhone front camera).
+      Use max-width: 100%; height: auto; to keep it responsive.
     */
     canvas, video {
-      width: 100%;
-      aspect-ratio: 4 / 3; /* Maintains 4:3 aspect ratio */
+      max-width: 100%;
+      height: auto;
       border: 1px solid #0F0;
       margin: 5px 0;
     }
+    /* Mirror effect for the video so it looks like a reflection */
     video {
-      transform: scaleX(-1); /* Mirror effect */
+      transform: scaleX(-1);
     }
 
     /* Controls container */
@@ -223,8 +225,9 @@
       });
     }
 
-    // Resize the canvas based on video dimensions
+    // Resize the canvas based on the real video dimensions
     function resizeCanvas() {
+      // The video might have a vertical ratio if it's a front camera, so let's adapt.
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       hilbertPoints = precomputeHilbertPoints(order, canvas.width, canvas.height);
@@ -236,7 +239,7 @@
       animate();
     });
 
-    // Handle window resizing
+    // Handle window resizing (if the user rotates the phone, etc.)
     window.addEventListener('resize', () => {
       resizeCanvas();
     });
