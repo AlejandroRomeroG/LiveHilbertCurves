@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hilbert's Webcam</title>
+  <!-- Helps iOS (iPhone/iPad) display the page properly in full screen -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <style>
+    /* Global reset and basic styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      font-family: 'Courier New', monospace;
+      background-color: #000;
+      color: #0F0;
+    }
+
+    /* Main container in a column layout */
+    #container {
+      display: flex;
+      flex-direction: column;
+    }
+
+    header, footer {
+      text-align: center;
+      padding: 10px;
+      flex: 0 0 auto;
+    }
+
+    main {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+      align-items: center;
+      padding: 10px;
+    }
+
+    /* Media container for canvas (top) and video (bottom) */
+    .media-container {
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 
+      Canvas and video styles.
+      We mirror the video so it appears like a reflection.
+    */
+    canvas, video {
+      width: 100%;
+      aspect-ratio: 4 / 3; /* Maintains 4:3 aspect ratio */
+      border: 1px solid #0F0;
+      margin: 5px 0;
+    }
+    video {
+      transform: scaleX(-1); /* Mirror effect */
+    }
+
+    /* Controls container */
+    #controls {
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-around;
+      margin: 10px 0;
+    }
+    .control {
+      flex: 1 1 45%;
+      min-width: 200px;
+      margin: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .control label {
+      margin-bottom: 5px;
+      font-size: 1.2em;
+      text-align: center;
+    }
+    .control input[type="range"] {
+      width: 100%;
+      height: 25px;
+    }
+    .control .value {
+      margin-top: 5px;
+      font-size: 1.2em;
+    }
+
+    /* Adjustments for very small screens */
+    @media (max-width: 400px) {
+      .control label,
+      .control .value {
+        font-size: 1em;
+      }
+      .control input[type="range"] {
+        height: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <header>
+      <h1>Hilbert's Webcam</h1>
+    </header>
+    <main>
+      <div class="media-container">
+        <!-- Canvas for the Hilbert Curve (displayed at normal resolution) -->
+        <canvas id="hilbertCanvas"></canvas>
+        <!-- Mirrored video feed (bottom) -->
+        <video id="video" autoplay playsinline></video>
+      </div>
+      <div id="controls">
+        <!-- Brightness threshold control, normalized from 0 to 100% -->
+        <div class="control">
+          <label for="brightnessThreshold">Brightness</label>
+          <input type="range" id="brightnessThreshold" min="0" max="100" value="40">
+          <div class="value" id="brightnessValue">40%</div>
+        </div>
+        <!-- Hilbert curve complexity (order) control -->
+        <div class="control">
+          <label for="orderSlider">Complexity</label>
+          <input type="range" id="orderSlider" min="1" max="8" value="8">
+          <div class="value" id="orderValue">8</div>
+        </div>
+      </div>
+    </main>
+    <footer>
+      <p>By: Alejandro Romero González</p>
+    </footer>
+  </div>
+  
+  <script>
+    // DOM references
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('hilbertCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const brightnessSlider = document.getElementById('brightnessThreshold');
+    const brightnessValueDisplay = document.getElementById('brightnessValue');
+    const orderSlider = document.getElementById('orderSlider');
+    const orderValueDisplay = document.getElementById('orderValue');
+
+    // Dynamic parameters
+    let order = parseInt(orderSlider.value);
+    let hilbertPoints = [];
+
+    // Update displayed brightness threshold (0–100%)
+    brightnessSlider.addEventListener('input', () => {
+      brightnessValueDisplay.textContent = brightnessSlider.value + '%';
+    });
+
+    // Update Hilbert order and recalculate points
+    orderSlider.addEventListener('input', () => {
+      order = parseInt(orderSlider.value);
+      orderValueDisplay.textContent = order;
+      hilbertPoints = precomputeHilbertPoints(order, canvas.width, canvas.height);
+    });
+
+    // Request camera access
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        video.srcObject = stream;
+        video.play();
+      })
+      .catch(err => {
+        console.error("Error accessing the camera:", err);
+      });
+
+    // -------------------------------------
+    //  HILBERT CURVE & FRACTAL CALCULATIONS
+    // -------------------------------------
+    function rot(n, x, y, rx, ry) {
+      if (ry === 0) {
+        if (rx === 1) {
+          x = n - 1 - x;
+          y = n - 1 - y;
+        }
+        return [y, x];
+      }
+      return [x, y];
+    }
+
+    function d2xy(n, d) {
+      let x = 0, y = 0;
+      let t = d;
+      for (let s = 1; s < n; s *= 2) {
+        const rx = 1 & (t >> 1);
+        const ry = 1 & (t ^ rx);
+        [x, y] = rot(s, x, y, rx, ry);
+        x += s * rx;
+        y += s * ry;
+        t >>= 2;
+      }
+      return [x, y];
+    }
+
+    function generateHilbertPoints(order) {
+      const n = Math.pow(2, order);
+      const totalPoints = n * n;
+      const points = [];
+      for (let i = 0; i < totalPoints; i++) {
+        points.push(d2xy(n, i));
+      }
+      return { points, gridSize: n };
+    }
+
+    // Scales the Hilbert points to the canvas
+    function precomputeHilbertPoints(order, width, height) {
+      const { points, gridSize } = generateHilbertPoints(order);
+      return points.map(([x, y]) => {
+        const scaledX = Math.floor(x / (gridSize - 1) * (width - 1));
+        const scaledY = Math.floor(y / (gridSize - 1) * (height - 1));
+        return [scaledX, scaledY];
+      });
+    }
+
+    // Resize the canvas based on video dimensions
+    function resizeCanvas() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      hilbertPoints = precomputeHilbertPoints(order, canvas.width, canvas.height);
+    }
+
+    // Once video metadata is loaded, set up the canvas and start animation
+    video.addEventListener('loadedmetadata', () => {
+      resizeCanvas();
+      animate();
+    });
+
+    // Handle window resizing
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+    });
+
+    // ------------------------------------
+    //  DRAW THE HILBERT CURVE (MIRRORED)
+    // ------------------------------------
+    function drawHilbertCurve() {
+      // Fill the entire canvas with black
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Convert slider value (0–100) to a threshold (0–255)
+      const brightnessThreshold = parseFloat(brightnessSlider.value) * 2.55;
+
+      // Temporary canvas to capture the mirrored video frame
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Mirror the drawing BEFORE drawing the video
+      tempCtx.translate(tempCanvas.width, 0);
+      tempCtx.scale(-1, 1);
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const frameData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+      const data = frameData.data;
+
+      // Helper function to get brightness at (x, y) with mirrored logic
+      function getBrightnessFromVideo(x, y) {
+        // x, y in the main canvas coordinate system
+        // We must map them to the mirrored frame
+        const scaledX = Math.floor(x / canvas.width * tempCanvas.width);
+        const scaledY = Math.floor(y / canvas.height * tempCanvas.height);
+        const index = (scaledY * tempCanvas.width + scaledX) * 4;
+        return (data[index] + data[index + 1] + data[index + 2]) / 3;
+      }
+
+      // Draw the fractal where brightness > threshold
+      ctx.beginPath();
+      for (let i = 0; i < hilbertPoints.length - 1; i++) {
+        const [x1, y1] = hilbertPoints[i];
+        const [x2, y2] = hilbertPoints[i + 1];
+        if (getBrightnessFromVideo(x1, y1) > brightnessThreshold) {
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+      }
+      ctx.strokeStyle = '#0F0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Continuous animation loop
+    function animate() {
+      drawHilbertCurve();
+      requestAnimationFrame(animate);
+    }
+
+    // ----------------------------------
+    //  HIGH-RES SNAPSHOT (mirrored)
+    // ----------------------------------
+    canvas.addEventListener('click', () => {
+      // We'll create a hidden "high-res" canvas
+      // For example, let's make it 2x the displayed resolution
+      const scaleFactor = 2;
+      const highResCanvas = document.createElement('canvas');
+      highResCanvas.width = canvas.width * scaleFactor;
+      highResCanvas.height = canvas.height * scaleFactor;
+      const highResCtx = highResCanvas.getContext('2d');
+
+      // Fill with black so there's no transparency
+      highResCtx.fillStyle = '#000';
+      highResCtx.fillRect(0, 0, highResCanvas.width, highResCanvas.height);
+
+      // We'll recalculate Hilbert points at 2x resolution
+      const hilbertHighRes = precomputeHilbertPoints(order, highResCanvas.width, highResCanvas.height);
+
+      // We'll create a temporary context that draws the mirrored video
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Mirror the drawing
+      tempCtx.translate(tempCanvas.width, 0);
+      tempCtx.scale(-1, 1);
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const frameData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+      const data = frameData.data;
+
+      // Same brightness threshold
+      const brightnessThreshold = parseFloat(brightnessSlider.value) * 2.55;
+
+      // Helper function for the mirrored high-res
+      function getBrightnessForHighRes(x, y) {
+        const scaledX = Math.floor((x / highResCanvas.width) * tempCanvas.width);
+        const scaledY = Math.floor((y / highResCanvas.height) * tempCanvas.height);
+        const index = (scaledY * tempCanvas.width + scaledX) * 4;
+        return (data[index] + data[index + 1] + data[index + 2]) / 3;
+      }
+
+      // Draw the Hilbert lines at high resolution
+      highResCtx.beginPath();
+      for (let i = 0; i < hilbertHighRes.length - 1; i++) {
+        const [x1, y1] = hilbertHighRes[i];
+        const [x2, y2] = hilbertHighRes[i + 1];
+        if (getBrightnessForHighRes(x1, y1) > brightnessThreshold) {
+          highResCtx.moveTo(x1, y1);
+          highResCtx.lineTo(x2, y2);
+        }
+      }
+
+      // Set lineWidth = scaleFactor to preserve perceived brightness
+      highResCtx.strokeStyle = '#0F0';
+      highResCtx.lineWidth = scaleFactor;
+      highResCtx.stroke();
+
+      // Trigger the download
+      const link = document.createElement('a');
+      link.download = 'Hilbert.png';
+      link.href = highResCanvas.toDataURL('image/png');
+      link.click();
+    });
+  </script>
+</body>
+</html>
